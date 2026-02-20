@@ -1,0 +1,24 @@
+# Photo and video files (too large for GitHub)
+all_photos/
+all_photos_web/
+all_videos/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Thumbnails
+._*
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Logs
+*.log
+
+# Environment
+.env
+venv/
