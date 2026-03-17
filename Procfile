@@ -1,1 +1,1 @@
-web: python server_pro.py . --port $PORT
+web: python server_r2.py . --port $PORT
