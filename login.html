@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wedding Gallery - Login</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .login-container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 50px 40px;
+            max-width: 400px;
+            width: 100%;
+            text-align: center;
+        }
+
+        .login-header {
+            margin-bottom: 40px;
+        }
+
+        .login-header h1 {
+            font-size: 2em;
+            margin-bottom: 10px;
+            color: #333;
+        }
+
+        .login-header p {
+            color: #666;
+            font-size: 1em;
+        }
+
+        .icon {
+            font-size: 4em;
+            margin-bottom: 20px;
+        }
+
+        .input-group {
+            margin-bottom: 25px;
+            text-align: left;
+        }
+
+        .input-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #555;
+            font-weight: 500;
+            font-size: 0.9em;
+        }
+
+        .input-group input {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 1em;
+            transition: border-color 0.3s;
+        }
+
+        .input-group input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .btn-login {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 1.1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .btn-login:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-login:active {
+            transform: translateY(0);
+        }
+
+        .error-message {
+            background: #fee;
+            color: #c33;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+            font-size: 0.9em;
+        }
+
+        .error-message.show {
+            display: block;
+            animation: shake 0.5s;
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-10px); }
+            75% { transform: translateX(10px); }
+        }
+
+        .footer {
+            margin-top: 30px;
+            color: #999;
+            font-size: 0.85em;
+        }
+
+        @media (max-width: 480px) {
+            .login-container {
+                padding: 40px 30px;
+            }
+
+            .login-header h1 {
+                font-size: 1.5em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-header">
+            <div class="icon">💒</div>
+            <h1>Wedding Gallery</h1>
+            <p>Enter password to view photos</p>
+        </div>
+
+        <div id="errorMessage" class="error-message">
+            Incorrect password. Please try again.
+        </div>
+
+        <form id="loginForm" onsubmit="return checkPassword(event)">
+            <div class="input-group">
+                <label for="password">Password</label>
+                <input
+                    type="password"
+                    id="password"
+                    placeholder="Enter password"
+                    autocomplete="off"
+                    autofocus
+                    required
+                >
+            </div>
+
+            <button type="submit" class="btn-login">
+                Enter Gallery
+            </button>
+        </form>
+
+        <div class="footer">
+            Please contact the couple if you need the password
+        </div>
+    </div>
+
+    <script>
+        // Simple password protection
+        // For better security, use server-side authentication
+        const CORRECT_PASSWORD_HASH = "wedding2024"; // You can change this
+
+        function checkPassword(event) {
+            event.preventDefault();
+
+            const password = document.getElementById('password').value;
+            const errorMessage = document.getElementById('errorMessage');
+
+            // Simple check - for better security, use a hash
+            if (password === CORRECT_PASSWORD_HASH) {
+                // Store session
+                sessionStorage.setItem('gallery_authenticated', 'true');
+                // Redirect to gallery
+                window.location.href = '/gallery.html';
+                return false;
+            } else {
+                // Show error
+                errorMessage.classList.add('show');
+                document.getElementById('password').value = '';
+                document.getElementById('password').focus();
+
+                // Hide error after 3 seconds
+                setTimeout(() => {
+                    errorMessage.classList.remove('show');
+                }, 3000);
+
+                return false;
+            }
+        }
+
+        // Check if already authenticated
+        if (sessionStorage.getItem('gallery_authenticated') === 'true') {
+            window.location.href = '/gallery.html';
+        }
+    </script>
+</body>
+</html>

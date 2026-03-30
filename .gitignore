@@ -1,7 +1,6 @@
-# Photo and video files (too large for GitHub)
+# We NEED all_photos_web and all_videos for static hosting
+# Only exclude the original HEIC photos
 all_photos/
-all_photos_web/
-all_videos/
 
 # macOS
 .DS_Store
@@ -22,3 +21,18 @@ __pycache__/
 # Environment
 .env
 venv/
+
+# Claude
+.claude/
+
+# Server files not needed for static hosting
+server*.py
+start*.sh
+convert_heic.sh
+upload_to_r2.py
+test_auth.sh
+requirements.txt
+Procfile
+START_HERE.txt
+README.txt
+.railwayignore

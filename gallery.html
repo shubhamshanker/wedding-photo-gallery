@@ -285,6 +285,7 @@
             <span id="photoCount">Loading...</span> Photos •
             <span id="videoCount">Loading...</span> Videos
         </div>
+        <button id="logoutBtn" style="position: absolute; top: 20px; right: 20px; padding: 8px 16px; background: #555; border: none; color: white; border-radius: 5px; cursor: pointer; font-size: 0.9em;">Logout</button>
     </header>
 
     <div class="tabs">
@@ -328,6 +329,11 @@
     </div>
 
     <script>
+        // Check authentication
+        if (sessionStorage.getItem('gallery_authenticated') !== 'true') {
+            window.location.href = '/login.html';
+        }
+
         let photos = [];
         let currentPhotoIndex = 0;
         let currentPage = 0;
@@ -598,6 +604,12 @@
         // Close modal on background click
         document.getElementById('modal').addEventListener('click', (e) => {
             if (e.target.id === 'modal') closeModal();
+        });
+
+        // Logout functionality
+        document.getElementById('logoutBtn').addEventListener('click', () => {
+            sessionStorage.removeItem('gallery_authenticated');
+            window.location.href = '/login.html';
         });
 
         // Load content on page load
