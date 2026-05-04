@@ -520,6 +520,17 @@ def get_gallery_html():
 
   html { scroll-behavior: smooth; }
 
+  /* Slim, gold-accented scrollbar */
+  html { scrollbar-width: thin; scrollbar-color: var(--gold-light) transparent; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: var(--gold-light);
+    border-radius: 6px;
+    border: 2px solid var(--cream);
+  }
+  ::-webkit-scrollbar-thumb:hover { background: var(--gold); }
+
   body {
     font-family: var(--font-sans);
     background: var(--cream);
@@ -711,6 +722,60 @@ def get_gallery_html():
     outline: none;
   }
   select:focus { border-color: var(--gold); }
+
+  .toolbar-input {
+    padding: 7px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--warm-white);
+    font-family: var(--font-sans);
+    font-size: 12px;
+    color: var(--charcoal);
+    outline: none;
+    width: 130px;
+  }
+  .toolbar-input:focus { border-color: var(--gold); }
+  .toolbar-input.num { width: 64px; text-align: center; }
+  .toolbar-label {
+    font-size: 11px;
+    color: var(--warm-gray);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    margin-right: 2px;
+  }
+  .toolbar-clear {
+    border: none;
+    background: transparent;
+    color: var(--warm-gray);
+    font-size: 11px;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+  }
+  .toolbar-clear:hover { color: var(--gold-dark); background: var(--cream); }
+
+  /* Jump-to-page input inside pagination */
+  .page-jump {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: 8px;
+    font-size: 12px;
+    color: var(--warm-gray);
+  }
+  .page-jump input {
+    width: 56px;
+    padding: 5px 8px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--warm-white);
+    font-family: var(--font-sans);
+    font-size: 12px;
+    color: var(--charcoal);
+    text-align: center;
+    outline: none;
+  }
+  .page-jump input:focus { border-color: var(--gold); }
 
   .view-toggle { display: flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
   .view-btn {
@@ -1471,7 +1536,14 @@ def get_gallery_html():
       <option value="100">100 per page</option>
       <option value="200">200 per page</option>
       <option value="500">500 per page</option>
+      <option value="custom">Custom…</option>
     </select>
+    <input type="number" id="perPageCustom" class="toolbar-input num" min="1" max="1000" placeholder="N" style="display:none" title="Custom photos per page">
+    <span class="toolbar-label">From</span>
+    <input type="date" id="dateFrom" class="toolbar-input" title="Filter from date">
+    <span class="toolbar-label">To</span>
+    <input type="date" id="dateTo" class="toolbar-input" title="Filter to date">
+    <button class="toolbar-clear" id="clearDates" title="Clear date filter">✕</button>
     <select id="sortSel">
       <option value="date-desc">Newest first</option>
       <option value="date-asc">Oldest first</option>
@@ -1597,6 +1669,8 @@ const state = {
   selMode: false,
   searchQ: '',
   showFavOnly: false,
+  dateFrom: '',
+  dateTo: '',
   lbIndex: 0,
   lbItems: [],
 };
@@ -1653,7 +1727,16 @@ async function loadPage() {
     state.pages = Math.ceil(filtered.length / state.perPage);
     renderGrid(filtered.slice((state.page-1)*state.perPage, state.page*state.perPage));
   } else {
-    url = `/api/media?type=${state.tab}&page=${state.page}&per_page=${state.perPage}&sort=${state.sort}&order=${state.order}`;
+    const params = new URLSearchParams({
+      type: state.tab,
+      page: state.page,
+      per_page: state.perPage,
+      sort: state.sort,
+      order: state.order,
+    });
+    if (state.dateFrom) params.set('date_from', state.dateFrom);
+    if (state.dateTo) params.set('date_to', state.dateTo);
+    url = `/api/media?${params.toString()}`;
     data = await api(url);
     state.items = data.items || [];
     state.total = data.total;
@@ -2062,8 +2145,21 @@ function renderPagination() {
   if (end < state.pages) html += `${end<state.pages-1?'<span class="page-info">…</span>':''}<button class="page-btn" onclick="goPage(${state.pages})">${state.pages}</button>`;
   html += `<button class="page-btn" onclick="goPage(${state.page+1})" ${state.page>=state.pages?'disabled':''}>›</button>`;
   html += `<span class="page-info">Page ${state.page} of ${state.pages}</span>`;
+  html += `<span class="page-jump">Jump to <input type="number" id="pageJump" min="1" max="${state.pages}" value="${state.page}"></span>`;
 
   el.innerHTML = html;
+
+  const jump = document.getElementById('pageJump');
+  if (jump) {
+    const go = () => {
+      let p = parseInt(jump.value);
+      if (!Number.isFinite(p)) return;
+      p = Math.max(1, Math.min(state.pages, p));
+      if (p !== state.page) goPage(p);
+    };
+    jump.addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+    jump.addEventListener('blur', go);
+  }
 }
 
 function goPage(p) {
@@ -2105,9 +2201,41 @@ document.querySelectorAll('.tab').forEach(tab => {
 });
 
 document.getElementById('perPageSel').addEventListener('change', e => {
-  state.perPage = parseInt(e.target.value);
+  const v = e.target.value;
+  const customInput = document.getElementById('perPageCustom');
+  if (v === 'custom') {
+    customInput.style.display = '';
+    customInput.focus();
+    return;
+  }
+  customInput.style.display = 'none';
+  state.perPage = parseInt(v);
   state.page = 1;
   loadPage();
+});
+
+document.getElementById('perPageCustom').addEventListener('change', e => {
+  let n = parseInt(e.target.value);
+  if (!Number.isFinite(n)) return;
+  n = Math.max(1, Math.min(1000, n));
+  e.target.value = n;
+  state.perPage = n;
+  state.page = 1;
+  loadPage();
+});
+
+function applyDateFilter() {
+  state.dateFrom = document.getElementById('dateFrom').value;
+  state.dateTo = document.getElementById('dateTo').value;
+  state.page = 1;
+  loadPage();
+}
+document.getElementById('dateFrom').addEventListener('change', applyDateFilter);
+document.getElementById('dateTo').addEventListener('change', applyDateFilter);
+document.getElementById('clearDates').addEventListener('click', () => {
+  document.getElementById('dateFrom').value = '';
+  document.getElementById('dateTo').value = '';
+  applyDateFilter();
 });
 
 document.getElementById('sortSel').addEventListener('change', e => {

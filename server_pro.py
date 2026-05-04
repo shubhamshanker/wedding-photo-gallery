@@ -410,12 +410,29 @@ class WeddingGalleryProHandler(http.server.BaseHTTPRequestHandler):
         per_page = int(qs.get('per_page', [100])[0])
         sort = qs.get('sort', ['date'])[0]
         order = qs.get('order', ['desc'])[0]
+        date_from = qs.get('date_from', [''])[0]
+        date_to = qs.get('date_to', [''])[0]
 
         with CACHE_LOCK:
             if media_type == 'videos':
                 items = CACHE.get('videos', [])
             else:
                 items = CACHE.get('photos', [])
+
+        # Date filter (inclusive). Bad input → ignore, never crash.
+        if date_from or date_to:
+            from datetime import datetime
+            try:
+                lo = datetime.strptime(date_from, '%Y-%m-%d').timestamp() if date_from else 0
+            except ValueError:
+                lo = 0
+            try:
+                hi_dt = datetime.strptime(date_to, '%Y-%m-%d') if date_to else None
+                # End of day (inclusive)
+                hi = hi_dt.timestamp() + 86400 - 1 if hi_dt else float('inf')
+            except ValueError:
+                hi = float('inf')
+            items = [it for it in items if lo <= it.get('mtime', 0) <= hi]
 
         # Sort
         reverse = order == 'desc'
@@ -425,6 +442,9 @@ class WeddingGalleryProHandler(http.server.BaseHTTPRequestHandler):
             items = sorted(items, key=lambda x: x['name'], reverse=reverse)
         elif sort == 'size':
             items = sorted(items, key=lambda x: x['size'], reverse=reverse)
+
+        # Clamp per_page to a sane range to avoid runaway responses
+        per_page = max(1, min(per_page, 1000))
 
         total = len(items)
         start = (page - 1) * per_page
