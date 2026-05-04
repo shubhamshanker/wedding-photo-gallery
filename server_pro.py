@@ -49,10 +49,10 @@ SUPPORTED_VIDEOS = {'.mov', '.mp4', '.m4v', '.avi', '.mkv', '.webm'}
 # Configuration
 CONFIG = {
     'max_cache_size': 1024,  # 1GB for Railway's 8GB RAM
-    'thumbnail_size': (600, 600),
-    'thumbnail_quality': 88,
+    'thumbnail_size': (480, 480),
+    'thumbnail_quality': 86,
     'preview_size': (1600, 1600),
-    'preview_quality': 90,
+    'preview_quality': 88,
     'enable_gzip': True,
     'enable_etag': True,
     'cache_duration': 86400,  # 24 hours

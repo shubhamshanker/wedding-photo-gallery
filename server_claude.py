@@ -733,9 +733,102 @@ def get_gallery_html():
     padding: 0 32px 48px;
   }
 
+  /* Mode tabs (iCloud-style: Years / Months / Days / All) */
+  .mode-tabs {
+    display: inline-flex;
+    background: var(--cream);
+    border: 1px solid var(--border);
+    border-radius: 22px;
+    padding: 3px;
+    gap: 2px;
+  }
+  .mode-tab {
+    border: none;
+    background: transparent;
+    padding: 7px 14px;
+    border-radius: 18px;
+    font-family: var(--font-sans);
+    font-size: 12px;
+    color: var(--warm-gray);
+    cursor: pointer;
+    transition: background 0.18s, color 0.18s;
+    letter-spacing: 0.02em;
+  }
+  .mode-tab:hover { color: var(--charcoal); }
+  .mode-tab.active {
+    background: var(--warm-white);
+    color: var(--charcoal);
+    box-shadow: 0 1px 2px rgba(42,36,32,0.08);
+  }
+
+  /* Date-grouped section header */
+  .group-header {
+    grid-column: 1 / -1;
+    font-family: var(--font-serif);
+    font-weight: 400;
+    font-size: 22px;
+    color: var(--charcoal);
+    letter-spacing: 0.01em;
+    margin: 18px 0 4px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  .group-header:first-child { margin-top: 0; }
+  .group-header .group-count {
+    font-size: 12px;
+    color: var(--warm-gray);
+    font-family: var(--font-sans);
+    margin-left: 10px;
+    letter-spacing: 0.04em;
+  }
+
+  /* Years mode: 1 hero per year, much larger */
+  .gallery-grid.years {
+    display: grid;
+    gap: 24px;
+    grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  }
+  .gallery-grid.years .photo-card {
+    aspect-ratio: 16/10;
+  }
+  .gallery-grid.years .photo-img-wrap { aspect-ratio: unset; height: 100%; }
+  .gallery-grid.years .year-label {
+    position: absolute;
+    bottom: 14px;
+    left: 18px;
+    color: #fff;
+    font-family: var(--font-serif);
+    font-size: 30px;
+    font-weight: 300;
+    letter-spacing: 0.02em;
+    text-shadow: 0 2px 12px rgba(0,0,0,0.5);
+    z-index: 2;
+  }
+  .gallery-grid.years .year-count {
+    position: absolute;
+    top: 14px;
+    right: 18px;
+    color: rgba(255,255,255,0.85);
+    font-size: 11px;
+    letter-spacing: 0.05em;
+    background: rgba(0,0,0,0.25);
+    padding: 4px 10px;
+    border-radius: 12px;
+    backdrop-filter: blur(6px);
+    z-index: 2;
+  }
+  .gallery-grid.years .photo-card::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to top, rgba(0,0,0,0.45) 0%, transparent 50%);
+    pointer-events: none;
+    z-index: 1;
+  }
+
   .gallery-grid {
     display: grid;
-    gap: 4px;
+    gap: 14px;
     grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   }
 
@@ -747,7 +840,7 @@ def get_gallery_html():
 
   .gallery-grid.masonry {
     columns: 5;
-    column-gap: 4px;
+    column-gap: 14px;
     display: block;
   }
 
@@ -763,12 +856,19 @@ def get_gallery_html():
     overflow: hidden;
     cursor: pointer;
     background: var(--gold-light);
+    border-radius: 6px;
+    box-shadow: 0 1px 3px rgba(42,36,32,0.06);
+    transition: box-shadow 0.25s ease, transform 0.25s ease;
+  }
+  .photo-card:hover {
+    box-shadow: 0 6px 24px rgba(42,36,32,0.12);
+    transform: translateY(-2px);
   }
 
   .gallery-grid.masonry .photo-card {
     display: inline-block;
     width: 100%;
-    margin-bottom: 4px;
+    margin-bottom: 14px;
     break-inside: avoid;
   }
 
@@ -962,6 +1062,8 @@ def get_gallery_html():
     display: block;
     border-radius: 2px;
     animation: lb-in 0.25s ease;
+    transition: transform 0.3s ease;
+    transform-origin: center center;
   }
 
   .lb-video {
@@ -1358,6 +1460,12 @@ def get_gallery_html():
 <!-- TOOLBAR -->
 <div class="toolbar">
   <div class="toolbar-left">
+    <div class="mode-tabs" id="modeTabs">
+      <button class="mode-tab" data-mode="years">Years</button>
+      <button class="mode-tab" data-mode="months">Months</button>
+      <button class="mode-tab" data-mode="days">Days</button>
+      <button class="mode-tab active" data-mode="all">All</button>
+    </div>
     <select id="perPageSel">
       <option value="50" selected>50 per page</option>
       <option value="100">100 per page</option>
@@ -1432,6 +1540,8 @@ def get_gallery_html():
   <div class="lb-footer">
     <div class="lb-thumb-strip" id="lbThumbs"></div>
     <div class="lb-actions">
+      <button class="lb-btn" id="lbRotateL" title="Rotate left (L)">↺</button>
+      <button class="lb-btn" id="lbRotateR" title="Rotate right (R)">↻</button>
       <button class="lb-btn fav-btn" id="lbFav">♡ Favorite</button>
       <a class="lb-btn" id="lbDownload" download>↓ Download</a>
       <button class="lb-btn" id="lbInfo">i Info</button>
@@ -1478,6 +1588,7 @@ const state = {
   order: 'desc',
   cols: '4',
   view: 'grid',
+  mode: 'all', // 'years' | 'months' | 'days' | 'all'
   items: [],
   total: 0,
   pages: 0,
@@ -1573,6 +1684,25 @@ function updatePageInfo() {
   if (tab) tab.querySelector('.tab-count').textContent = state.total;
 }
 
+// ─── DATE GROUPING (Years / Months / Days) ───────────────────────────────────
+function bucketKey(item, mode) {
+  const d = new Date((item.mtime || 0) * 1000);
+  if (mode === 'years') return String(d.getFullYear());
+  if (mode === 'months') return d.toLocaleDateString(undefined, { year: 'numeric', month: 'long' });
+  if (mode === 'days')   return d.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+  return '';
+}
+
+function groupItems(items, mode) {
+  const map = new Map();
+  for (const it of items) {
+    const k = bucketKey(it, mode);
+    if (!map.has(k)) map.set(k, []);
+    map.get(k).push(it);
+  }
+  return Array.from(map.entries()); // ordered insertion
+}
+
 // ─── RENDER ───────────────────────────────────────────────────────────────────
 function renderGrid(items) {
   const grid = document.getElementById('galleryGrid');
@@ -1580,6 +1710,8 @@ function renderGrid(items) {
 
   if (state.view === 'list') {
     grid.classList.add('list');
+  } else if (state.mode === 'years') {
+    grid.classList.add('years');
   } else if (state.cols === 'masonry') {
     grid.classList.add('masonry');
   } else {
@@ -1597,6 +1729,48 @@ function renderGrid(items) {
   }
 
   const frag = document.createDocumentFragment();
+
+  // Years mode: 1 hero card per year (most recent photo of that year).
+  if (state.mode === 'years' && state.view !== 'list') {
+    const groups = groupItems(items, 'years');
+    const heroes = groups.map(([year, list]) => ({ year, hero: list[0], count: list.length }));
+    // lbItems still flat = all items (so navigation through year hero opens its photo in the full timeline)
+    heroes.forEach(({ year, hero, count }) => {
+      const idx = items.indexOf(hero);
+      const card = createCard(hero, idx);
+      card.insertAdjacentHTML('beforeend',
+        `<div class="year-label">${year}</div><div class="year-count">${count} photos</div>`);
+      frag.appendChild(card);
+    });
+    grid.innerHTML = '';
+    grid.appendChild(frag);
+    grid.querySelectorAll('img[data-src]').forEach(img => imgObserver.observe(img));
+    state.lbItems = items;
+    return;
+  }
+
+  // Months / Days: grouped sections with headers
+  if ((state.mode === 'months' || state.mode === 'days') && state.view !== 'list') {
+    const groups = groupItems(items, state.mode);
+    let runningIdx = 0;
+    groups.forEach(([label, list]) => {
+      const h = document.createElement('div');
+      h.className = 'group-header';
+      h.innerHTML = `${label}<span class="group-count">${list.length} ${list.length === 1 ? 'photo' : 'photos'}</span>`;
+      frag.appendChild(h);
+      list.forEach(item => {
+        const card = createCard(item, runningIdx);
+        frag.appendChild(card);
+        runningIdx++;
+      });
+    });
+    grid.innerHTML = '';
+    grid.appendChild(frag);
+    grid.querySelectorAll('img[data-src]').forEach(img => imgObserver.observe(img));
+    state.lbItems = items;
+    return;
+  }
+
   items.forEach((item, idx) => {
     const card = createCard(item, idx);
     frag.appendChild(card);
@@ -1718,6 +1892,7 @@ function renderLightboxItem() {
     img.src = `/preview/${encodeURIComponent(item.path)}`;
     img.style.animation = 'none';
     requestAnimationFrame(() => { img.style.animation = ''; });
+    applyRotation();
     // Preload neighbors for instant nav
     [1, -1].forEach(d => {
       const n = state.lbItems[state.lbIndex + d];
@@ -1957,6 +2132,23 @@ document.querySelectorAll('.view-btn').forEach(btn => {
   });
 });
 
+document.querySelectorAll('.mode-tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.mode-tab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    state.mode = btn.dataset.mode;
+    state.page = 1;
+    // Years mode: show enough items so we get every year as a hero. Force perPage high
+    // for grouped modes; otherwise the user's choice stays.
+    if (state.mode !== 'all') {
+      state.perPage = 500;
+    } else {
+      state.perPage = parseInt(document.getElementById('perPageSel').value) || 50;
+    }
+    loadPage();
+  });
+});
+
 document.getElementById('scanBtn').addEventListener('click', scan);
 document.getElementById('uploadBtn').addEventListener('click', () => document.getElementById('uploadModal').classList.add('open'));
 
@@ -1990,10 +2182,38 @@ document.getElementById('selClear').addEventListener('click', () => {
   document.querySelectorAll('.photo-card').forEach(c => c.classList.remove('selected'));
 });
 
+// ─── ROTATION (persisted per-photo in localStorage) ─────────────────────────
+function loadRotations() {
+  try { return JSON.parse(localStorage.getItem('photoRotations') || '{}'); }
+  catch(e) { return {}; }
+}
+function saveRotations(r) {
+  try { localStorage.setItem('photoRotations', JSON.stringify(r)); } catch(e) {}
+}
+function getRotation(path) {
+  return (loadRotations()[path] || 0) % 360;
+}
+function applyRotation() {
+  const item = state.lbItems[state.lbIndex];
+  if (!item) return;
+  const deg = getRotation(item.path);
+  document.getElementById('lbImg').style.transform = `rotate(${deg}deg)`;
+}
+function rotate(delta) {
+  const item = state.lbItems[state.lbIndex];
+  if (!item) return;
+  const r = loadRotations();
+  r[item.path] = (((r[item.path] || 0) + delta) % 360 + 360) % 360;
+  saveRotations(r);
+  applyRotation();
+}
+
 // Lightbox controls
 document.getElementById('lbClose').addEventListener('click', closeLightbox);
 document.getElementById('lbPrev').addEventListener('click', () => navLb(-1));
 document.getElementById('lbNext').addEventListener('click', () => navLb(1));
+document.getElementById('lbRotateL').addEventListener('click', () => rotate(-90));
+document.getElementById('lbRotateR').addEventListener('click', () => rotate(90));
 document.getElementById('lbFav').addEventListener('click', e => {
   const path = e.currentTarget.dataset.path;
   if (path) toggleFav(path, null);
@@ -2023,6 +2243,8 @@ document.addEventListener('keydown', e => {
       const item = state.lbItems[state.lbIndex];
       if (item) toggleFav(item.path, null);
     }
+    else if (e.key === 'l' || e.key === 'L') rotate(-90);
+    else if (e.key === 'r' || e.key === 'R') rotate(90);
   } else {
     if (e.key === 'Escape' && state.selMode) {
       state.selMode = false;

@@ -9,6 +9,8 @@ import sys
 import json
 import time
 import io
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 # Import server_pro as base
@@ -29,6 +31,8 @@ try:
     HAS_BOTO3 = True
 except ImportError:
     HAS_BOTO3 = False
+    class ClientError(Exception):  # noqa: N818 — fallback so refs don't NameError
+        pass
 
 # ─── R2 CLIENT ────────────────────────────────────────────────────────────────
 R2_CLIENT = None
@@ -74,6 +78,155 @@ def init_r2():
         return False
 
 
+# ─── DERIVATIVE GENERATION (thumb + preview) ──────────────────────────────────
+DERIV_PREFIX = '_cache'  # all generated thumbs/previews live here in R2
+
+def _deriv_key(kind, src_key):
+    """R2 key for a derivative: _cache/thumb/<src> or _cache/preview/<src>."""
+    return f"{DERIV_PREFIX}/{kind}/{src_key}"
+
+
+def get_or_make_r2_derivative(src_key, kind):
+    """Return JPEG bytes for thumb/preview of src_key. Cached in memory + R2.
+
+    Lookup order: memory cache → R2 _cache/<kind>/<src> → generate from original.
+    Once generated, persists to R2 so dyno restarts don't lose work.
+    Returns None on failure (caller should fall back).
+    """
+    if not R2_CLIENT:
+        return None
+
+    mem_key = f"r2:{kind}:{src_key}"
+    cached = THUMB_CACHE.get(mem_key)
+    if cached:
+        return cached
+
+    deriv_key = _deriv_key(kind, src_key)
+
+    # Try persisted derivative on R2
+    try:
+        resp = R2_CLIENT.get_object(Bucket=R2_BUCKET, Key=deriv_key)
+        data = resp['Body'].read()
+        THUMB_CACHE.set(mem_key, data)
+        return data
+    except ClientError as e:
+        code = e.response.get('Error', {}).get('Code', '')
+        if code not in ('NoSuchKey', '404'):
+            print(f"R2 derivative fetch error ({deriv_key}): {e}")
+
+    # Generate from original
+    if not HAS_PIL:
+        return None
+
+    try:
+        import PIL.Image
+
+        resp = R2_CLIENT.get_object(Bucket=R2_BUCKET, Key=src_key)
+        img_data = resp['Body'].read()
+
+        img = PIL.Image.open(io.BytesIO(img_data))
+
+        # Honor EXIF orientation so generated thumbs aren't sideways
+        try:
+            from PIL import ImageOps
+            img = ImageOps.exif_transpose(img)
+        except Exception:
+            pass
+
+        if kind == 'preview':
+            size = CONFIG['preview_size']
+            quality = CONFIG['preview_quality']
+            progressive = True
+        else:
+            size = CONFIG['thumbnail_size']
+            quality = CONFIG['thumbnail_quality']
+            progressive = False
+
+        img.thumbnail(size, PIL.Image.Resampling.LANCZOS)
+
+        if img.mode in ('RGBA', 'P', 'LA'):
+            background = PIL.Image.new('RGB', img.size, (255, 255, 255))
+            if img.mode == 'P':
+                img = img.convert('RGBA')
+            background.paste(img, mask=img.split()[-1] if img.mode in ('RGBA', 'LA') else None)
+            img = background
+        elif img.mode != 'RGB':
+            img = img.convert('RGB')
+
+        buf = io.BytesIO()
+        img.save(buf, 'JPEG', quality=quality, optimize=True, progressive=progressive)
+        out = buf.getvalue()
+
+        THUMB_CACHE.set(mem_key, out)
+
+        # Persist to R2 (best-effort, don't block response on failure)
+        try:
+            R2_CLIENT.put_object(
+                Bucket=R2_BUCKET,
+                Key=deriv_key,
+                Body=out,
+                ContentType='image/jpeg',
+                CacheControl=f"public, max-age={CONFIG['cache_duration']}",
+            )
+        except Exception as e:
+            print(f"R2 derivative persist failed ({deriv_key}): {e}")
+
+        return out
+    except Exception as e:
+        print(f"R2 derivative generation failed ({src_key}, {kind}): {e}")
+        return None
+
+
+# ─── BACKGROUND PRE-WARM ──────────────────────────────────────────────────────
+_PREWARM_LOCK = threading.Lock()
+_PREWARMED = set()  # src keys we've already kicked a job for this process
+
+def prewarm_r2_thumbs(photos, kind='thumb', concurrency=8):
+    """Spawn a daemon thread that generates+persists thumbs for given photos.
+
+    Idempotent: each src key is only ever pre-warmed once per process.
+    Skips photos whose derivative already exists on R2.
+    """
+    if not R2_CLIENT or not photos:
+        return
+
+    keys = []
+    with _PREWARM_LOCK:
+        for p in photos:
+            k = p['path'] if isinstance(p, dict) else p
+            mark = f"{kind}:{k}"
+            if mark in _PREWARMED:
+                continue
+            _PREWARMED.add(mark)
+            keys.append(k)
+
+    if not keys:
+        return
+
+    def _run():
+        with ThreadPoolExecutor(max_workers=concurrency) as pool:
+            for k in keys:
+                pool.submit(_prewarm_one, k, kind)
+
+    t = threading.Thread(target=_run, daemon=True, name=f"prewarm-{kind}")
+    t.start()
+
+
+def _prewarm_one(src_key, kind):
+    """Generate one derivative if not already on R2."""
+    try:
+        # Cheap existence check first — saves a full download if already cached.
+        deriv_key = _deriv_key(kind, src_key)
+        try:
+            R2_CLIENT.head_object(Bucket=R2_BUCKET, Key=deriv_key)
+            return  # already exists
+        except ClientError:
+            pass
+        get_or_make_r2_derivative(src_key, kind)
+    except Exception as e:
+        print(f"prewarm failed for {src_key}: {e}")
+
+
 # ─── R2-ENHANCED HANDLER ──────────────────────────────────────────────────────
 class R2GalleryHandler(WeddingGalleryProHandler):
     """Extended handler with R2 storage support."""
@@ -91,6 +244,9 @@ class R2GalleryHandler(WeddingGalleryProHandler):
             for page in paginator.paginate(Bucket=R2_BUCKET):
                 for obj in page.get('Contents', []):
                     key = obj['Key']
+                    # Skip our own generated thumbs/previews
+                    if key.startswith(DERIV_PREFIX + '/'):
+                        continue
                     ext = Path(key).suffix.lower()
 
                     entry = {
@@ -135,6 +291,11 @@ class R2GalleryHandler(WeddingGalleryProHandler):
 
         elapsed = time.time() - start_time
 
+        # Kick off background pre-warm for the first page of R2 thumbs.
+        # Persisted to R2, so subsequent dyno restarts skip generation entirely.
+        if r2_photos:
+            prewarm_r2_thumbs(r2_photos[:120])
+
         self.send_json({
             'photos': len(all_photos),
             'videos': len(all_videos),
@@ -159,54 +320,11 @@ class R2GalleryHandler(WeddingGalleryProHandler):
 
     def serve_r2_thumbnail(self, key):
         """Generate and serve thumbnail from R2 photo."""
-        if not R2_CLIENT:
-            self.send_404()
+        bytes_ = get_or_make_r2_derivative(key, 'thumb')
+        if bytes_ is None:
+            self.serve_r2_media(key)
             return
-
-        # Check cache
-        cache_key = f"r2:thumb:{key}"
-        cached = THUMB_CACHE.get(cache_key)
-
-        if cached:
-            self._send_image_bytes(cached, 'image/jpeg')
-            return
-
-        # Download from R2 and generate thumbnail
-        if HAS_PIL:
-            try:
-                import PIL.Image
-
-                # Download image from R2
-                response = R2_CLIENT.get_object(Bucket=R2_BUCKET, Key=key)
-                img_data = response['Body'].read()
-
-                # Generate thumbnail
-                img = PIL.Image.open(io.BytesIO(img_data))
-                img.thumbnail(CONFIG['thumbnail_size'], PIL.Image.Resampling.LANCZOS)
-
-                if img.mode in ('RGBA', 'P', 'LA'):
-                    background = PIL.Image.new('RGB', img.size, (255, 255, 255))
-                    if img.mode == 'P':
-                        img = img.convert('RGBA')
-                    background.paste(img, mask=img.split()[-1] if img.mode in ('RGBA', 'LA') else None)
-                    img = background
-                elif img.mode != 'RGB':
-                    img = img.convert('RGB')
-
-                buf = io.BytesIO()
-                img.save(buf, 'JPEG', quality=CONFIG['thumbnail_quality'], optimize=True)
-                thumb_bytes = buf.getvalue()
-
-                # Cache it
-                THUMB_CACHE.set(cache_key, thumb_bytes)
-
-                self._send_image_bytes(thumb_bytes, 'image/jpeg')
-                return
-            except Exception as e:
-                print(f"R2 thumbnail generation failed for {key}: {e}")
-
-        # Fallback: serve full image
-        self.serve_r2_media(key)
+        self._send_image_bytes(bytes_, 'image/jpeg')
 
     def serve_media_file(self, rel_path):
         """Serve media from R2 or local."""
@@ -235,48 +353,11 @@ class R2GalleryHandler(WeddingGalleryProHandler):
 
     def serve_r2_preview(self, key):
         """Generate and serve ~1600px JPEG preview from R2 original."""
-        if not R2_CLIENT:
-            self.send_404()
+        bytes_ = get_or_make_r2_derivative(key, 'preview')
+        if bytes_ is None:
+            self.serve_r2_media(key)
             return
-
-        cache_key = f"r2:preview:{key}"
-        cached = THUMB_CACHE.get(cache_key)
-        if cached:
-            self._send_image_bytes(cached, 'image/jpeg')
-            return
-
-        if HAS_PIL:
-            try:
-                import PIL.Image
-
-                response = R2_CLIENT.get_object(Bucket=R2_BUCKET, Key=key)
-                img_data = response['Body'].read()
-
-                img = PIL.Image.open(io.BytesIO(img_data))
-                img.thumbnail(CONFIG['preview_size'], PIL.Image.Resampling.LANCZOS)
-
-                if img.mode in ('RGBA', 'P', 'LA'):
-                    background = PIL.Image.new('RGB', img.size, (255, 255, 255))
-                    if img.mode == 'P':
-                        img = img.convert('RGBA')
-                    background.paste(img, mask=img.split()[-1] if img.mode in ('RGBA', 'LA') else None)
-                    img = background
-                elif img.mode != 'RGB':
-                    img = img.convert('RGB')
-
-                buf = io.BytesIO()
-                img.save(buf, 'JPEG', quality=CONFIG['preview_quality'], optimize=True, progressive=True)
-                preview_bytes = buf.getvalue()
-
-                THUMB_CACHE.set(cache_key, preview_bytes)
-
-                self._send_image_bytes(preview_bytes, 'image/jpeg')
-                return
-            except Exception as e:
-                print(f"R2 preview generation failed for {key}: {e}")
-
-        # Fallback: serve original
-        self.serve_r2_media(key)
+        self._send_image_bytes(bytes_, 'image/jpeg')
 
     def serve_r2_media(self, key):
         """Serve full media file from R2."""
