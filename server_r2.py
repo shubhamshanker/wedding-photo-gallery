@@ -222,6 +222,62 @@ class R2GalleryHandler(WeddingGalleryProHandler):
             # Use parent's local media method
             super().serve_media_file(rel_path)
 
+    def serve_preview(self, rel_path):
+        """Serve a medium-size, high-quality preview for the lightbox."""
+        with CACHE_LOCK:
+            photos = CACHE.get('photos', [])
+            photo = next((p for p in photos if p['path'] == rel_path), None)
+
+        if photo and photo.get('source') == 'r2':
+            self.serve_r2_preview(rel_path)
+        else:
+            super().serve_preview(rel_path)
+
+    def serve_r2_preview(self, key):
+        """Generate and serve ~1600px JPEG preview from R2 original."""
+        if not R2_CLIENT:
+            self.send_404()
+            return
+
+        cache_key = f"r2:preview:{key}"
+        cached = THUMB_CACHE.get(cache_key)
+        if cached:
+            self._send_image_bytes(cached, 'image/jpeg')
+            return
+
+        if HAS_PIL:
+            try:
+                import PIL.Image
+
+                response = R2_CLIENT.get_object(Bucket=R2_BUCKET, Key=key)
+                img_data = response['Body'].read()
+
+                img = PIL.Image.open(io.BytesIO(img_data))
+                img.thumbnail(CONFIG['preview_size'], PIL.Image.Resampling.LANCZOS)
+
+                if img.mode in ('RGBA', 'P', 'LA'):
+                    background = PIL.Image.new('RGB', img.size, (255, 255, 255))
+                    if img.mode == 'P':
+                        img = img.convert('RGBA')
+                    background.paste(img, mask=img.split()[-1] if img.mode in ('RGBA', 'LA') else None)
+                    img = background
+                elif img.mode != 'RGB':
+                    img = img.convert('RGB')
+
+                buf = io.BytesIO()
+                img.save(buf, 'JPEG', quality=CONFIG['preview_quality'], optimize=True, progressive=True)
+                preview_bytes = buf.getvalue()
+
+                THUMB_CACHE.set(cache_key, preview_bytes)
+
+                self._send_image_bytes(preview_bytes, 'image/jpeg')
+                return
+            except Exception as e:
+                print(f"R2 preview generation failed for {key}: {e}")
+
+        # Fallback: serve original
+        self.serve_r2_media(key)
+
     def serve_r2_media(self, key):
         """Serve full media file from R2."""
         if not R2_CLIENT:

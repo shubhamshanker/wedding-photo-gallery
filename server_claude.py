@@ -1359,8 +1359,8 @@ def get_gallery_html():
 <div class="toolbar">
   <div class="toolbar-left">
     <select id="perPageSel">
-      <option value="50">50 per page</option>
-      <option value="100" selected>100 per page</option>
+      <option value="50" selected>50 per page</option>
+      <option value="100">100 per page</option>
       <option value="200">200 per page</option>
       <option value="500">500 per page</option>
     </select>
@@ -1473,7 +1473,7 @@ def get_gallery_html():
 const state = {
   tab: 'photos',
   page: 1,
-  perPage: 100,
+  perPage: 50,
   sort: 'date',
   order: 'desc',
   cols: '4',
@@ -1715,9 +1715,17 @@ function renderLightboxItem() {
     vid.pause(); vid.src = '';
     vid.style.display = 'none';
     img.style.display = 'block';
-    img.src = `/media/${encodeURIComponent(item.path)}`;
+    img.src = `/preview/${encodeURIComponent(item.path)}`;
     img.style.animation = 'none';
     requestAnimationFrame(() => { img.style.animation = ''; });
+    // Preload neighbors for instant nav
+    [1, -1].forEach(d => {
+      const n = state.lbItems[state.lbIndex + d];
+      if (n && !['.mov','.mp4','.m4v','.avi','.mkv'].includes(n.ext)) {
+        const pre = new Image();
+        pre.src = `/preview/${encodeURIComponent(n.path)}`;
+      }
+    });
   }
 
   // Update active thumb

@@ -49,8 +49,10 @@ SUPPORTED_VIDEOS = {'.mov', '.mp4', '.m4v', '.avi', '.mkv', '.webm'}
 # Configuration
 CONFIG = {
     'max_cache_size': 1024,  # 1GB for Railway's 8GB RAM
-    'thumbnail_size': (400, 400),
-    'thumbnail_quality': 85,
+    'thumbnail_size': (600, 600),
+    'thumbnail_quality': 88,
+    'preview_size': (1600, 1600),
+    'preview_quality': 90,
     'enable_gzip': True,
     'enable_etag': True,
     'cache_duration': 86400,  # 24 hours
@@ -304,6 +306,8 @@ class WeddingGalleryProHandler(http.server.BaseHTTPRequestHandler):
                 routes[path]()
             elif path.startswith('/thumb/'):
                 self.serve_thumbnail(unquote(path[7:]))
+            elif path.startswith('/preview/'):
+                self.serve_preview(unquote(path[9:]))
             elif path.startswith('/media/'):
                 self.serve_media_file(unquote(path[7:]))
             elif path.startswith('/api/exif/'):
@@ -652,6 +656,14 @@ class WeddingGalleryProHandler(http.server.BaseHTTPRequestHandler):
                 print(f"Thumbnail generation failed for {rel_path}: {e}")
 
         # Fallback: serve original with range support
+        self.serve_media_file(rel_path)
+
+    def serve_preview(self, rel_path):
+        """Serve a medium-size preview (~1600px) for the lightbox.
+
+        Base implementation just serves the original; R2 handler overrides
+        to generate a downsized JPEG and cache it.
+        """
         self.serve_media_file(rel_path)
 
     def _send_image_bytes(self, data, content_type):
